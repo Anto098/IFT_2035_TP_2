@@ -204,9 +204,9 @@ eval(cdr,L^S, T^S) :- !,
     typeof([cdr],X^Y,_),
     L = _^T.
 eval(apply, Function^Arg, Result) :- eval(Function,Arg,Result), !.
-eval(papply, Function^Arg, Result) :- !,
-    ( Function = [H1|_] -> true; H1 = []), (Arg = H2^_ -> true; H2 = Arg),
-    Result = [H2|H1].
-eval(Val,S,Val^S) :- !.
+eval(papply, Function^Arg^S, Result) :- !,
+    ( Function = [H|_] -> true; H = []),
+    Result = H^Arg^S.
 eval([Op | Ops], S1, S2) :- !, eval(Op,S1,S3), eval(Ops,S3,S2). %problème avec où on doit placer cette ligne
+eval(Val,S,Val^S) :- !.
 %% ¡¡ À COMPLÉTER!
