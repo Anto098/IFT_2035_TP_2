@@ -63,12 +63,12 @@ oper(Op:Type) :- oper(Op), type(Type).  % Annotation de type explicite.
 %% stack_get_nth(+N, +S, -V)
 %% Renvoie le Nième élément de la pile S.
 stack_get_nth(0, H^_, H) :- !.
-stack_get_nth(N, _^T, Nth) :- N_prime is N-1, stack_get_nth(N_prime, T, Nth).
+stack_get_nth(N, _^T, V) :- Next is N-1, stack_get_nth(Next, T, V).
 
 %% stack_set_nth(+N, +V, +S1, -S2)
 %% Renvoie une pile S2 identique à S1 sauf pour le Nième élément, remplacé par V.
 stack_set_nth(0, V, _^T, V^T) :- !.
-stack_set_nth(N, V, H^T, H^New_Tail) :- N_prime is N-1, stack_set_nth(N_prime, V, T, New_Tail).
+stack_set_nth(N, V, H^T, H^Rest) :- Next is N-1, stack_set_nth(Next, V, T, Rest).
 
 %%% Polymorphisme paramétrique  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -97,7 +97,7 @@ type_instantiate(T, T).
 type_instantiate(forall(X, T1), T3) :-
     type_subst(T1, X, _, T2), type_instantiate(T2, T3).
 
-%% type_uiv(+T, -XS) // uiv = uninstantiated variable
+%% type_uiv(+T, -XS)
 %% Cherche les variables Prolog non instanciées dans le type T, les instancie
 %% par `var(X)` avec un X instancié à un atome tout frais, et
 %% renvoie la liste des atomes frais ainsi créés.
@@ -106,7 +106,7 @@ type_uiv(var(X), []) :- atom(X), !.
 type_uiv(var(X), [X]) :- genatom(t, X), !.
 type_uiv(int, []).
 type_uiv(list(T), VS) :- type_uiv(T, VS).
-%% ¡¡ À COMPLÉTER! TODO
+%% ¡¡ À COMPLÉTER!
 
 %%% Inférence de types  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -117,15 +117,17 @@ type_uiv(list(T), VS) :- type_uiv(T, VS).
 typeof_val(Num, int) :- number(Num).
 typeof_val(true, bool).
 typeof_val(false, bool).
-typeof_val(nil,list(T)) :- type(T).
-typeof_val(X^Xs, list(T)) :- atom(X), type(X), type(Xs). % NOT SURE TODO
+typeof_val(nil, list(T)) :- type(T), !.
+% TODO Cut pour pas avoir des List de List à l'infini ?
+typeof_val(X^Xs, list(T)) :- typeof_val(X, T), typeof_val(Xs, list(T)).
+typeof_val([],(ST->ST)).
 typeof_val(V,   forall(X,T)) :-
     % On teste `atom(X)` pour être sûr qu'on est en train de *vérifier*
     % que V a un type forall(...) déjà fourni en entrée, plutôt qu'en train
     % d'*inférer* un type polymorphe.
     atom(X),
     genatom(t, X2), type_subst(T, X, var(X2), T2), typeof_val(V, T2).
-%% ¡¡ À COMPLÉTER! TODO
+%% ¡¡ À COMPLÉTER! TODO : Ajouter le polymorphisme dans les fonctions.
 
 %% typeof_op(+Op, ?ST1, ?ST2)
 %% Si l'opération Op est exécutée avec une pile de type ST1, le résultat est
@@ -133,8 +135,8 @@ typeof_val(V,   forall(X,T)) :-
 typeof_op(dup, T^ST, T^T^ST).
 typeof_op(swap, T1^T2^ST, T2^T1^ST).
 typeof_op(pop, _^ST, ST).
-typeof_op(get(N), T0^MID^TN^ST, TN^T0,MID^TN^ST).
-typeof_op(set(N), T^T0^MID^TN^ST, T0^MID^T^ST).
+typeof_op(get(_), T0^MID^TN^ST, TN^T0^MID^TN^ST).
+typeof_op(set(_), T^T0^MID^_^ST, T0^MID^T^ST).
 typeof_op(Val, ST, T^ST) :- typeof_val(Val, T).
 typeof_op(add, int^int^ST, int^ST).
 typeof_op(if, bool^T^T^ST, T^ST).
@@ -144,13 +146,11 @@ typeof_op(car, list(T)^ST, T^ST).
 typeof_op(cdr, list(T)^ST, list(T)^ST).
 typeof_op(apply, (ST1->ST2)^ST1, ST2).
 typeof_op(papply, ((T^ST1)->ST2)^T^ST3, (ST1->ST2)^ST3).
-% typeof_op( ??? ) :- . % Qu'est-ce que ça fait? TODO
-
-%% ¡¡ À COMPLÉTER! TODO
+typeof_op(Op:T, ST, T^ST) :- typeof_op(Op, ST, T^ST).
 
 %% typeof(+Ops, ?ST1, ?ST2)
-%% Si les opération Ops sont exécutées avec une pile de type ST1, le résultat est
-%% une pile de type ST2.
+%% Si les opération Ops sont exécutées avec une pile de type ST1, le résultat
+%% est une pile de type ST2.
 typeof([], S, S).
 typeof([Op | Ops], S1, S3) :- typeof_op(Op, S1, S2), typeof(Ops, S2, S3).
 
@@ -159,5 +159,54 @@ typeof([Op | Ops], S1, S3) :- typeof_op(Op, S1, S2), typeof(Ops, S2, S3).
 %% eval(+Ops, +S1, -S2)
 %% Évalue les opértions Ops avec S1 comme pile de départ.
 %% Renvoie la pile résultante S2.
-eval([], S, S).
-%% ¡¡ À COMPLÉTER! TODO
+eval([], S, S) :- !.
+% On cut à chaque clause pour éviter que les fonctions se fassent interpréter
+% comme de valeurs (si jamais argument invalide, ex: get(4) sur un stack
+% de taille 4 (car on commence à compter à 0))
+eval(dup, Elem_1^S, Elem_1^Elem_1^S) :- !.
+eval(swap, Elem_1^Elem_2^S, Elem_2^Elem_1^S) :- !.
+eval(pop, _^S, S) :- !.
+eval(get(N), S, Nth_elem^S) :- !,
+    stack_get_nth(N,S,Nth_elem).
+eval(set(N), V^S, Result) :- !,
+    stack_set_nth(N,V,S,Result).
+eval(add, A^B^S, C^S) :- !,
+    typeof_val(A,X),
+    typeof_val(B,Y),
+    typeof_val(S,Z),
+    typeof([add],X^Y^Z,_), C is A + B.
+eval(if, Cond^Then^Else^S,Result^S) :- !,
+    typeof_val(Cond,X),
+    typeof_val(Then,Y),
+    typeof_val(Else,Z),
+    typeof_val(S, W),
+    typeof([if],X^Y^Z^W,_),
+    (Cond -> Result = Then ; Result = Else).
+eval(cons, H^T^S, MyCons^S) :- !,
+    typeof_val(H,X),
+    typeof_val(T,Y),
+    typeof_val(S,Z),
+    typeof([cons],X^Y^Z,_),
+    MyCons = (H^T).
+eval(emptyp, L^S, Bool^S) :- !,
+    typeof_val(L,X),
+    typeof_val(S,Y),
+    typeof([emptyp],X^Y,_),
+    (L = (nil) -> Bool = true; Bool = false).
+eval(car, L^S, H^S) :- !,
+    typeof_val(L,X),
+    typeof_val(S,Y),
+    typeof([car],X^Y,_),
+    L = H^_.
+eval(cdr,L^S, T^S) :- !,
+    typeof_val(L,X),
+    typeof_val(S,Y),
+    typeof([cdr],X^Y,_),
+    L = _^T.
+eval(apply, Function^Arg, Result) :- eval(Function,Arg,Result), !.
+eval(papply, Function^Arg, Result) :- !,
+    ( Function = [H1|_] -> true; H1 = []), (Arg = H2^_ -> true; H2 = Arg),
+    Result = [H2|H1].
+eval(Val,S,Val^S) :- !.
+eval([Op | Ops], S1, S2) :- !, eval(Op,S1,S3), eval(Ops,S3,S2). %problème avec où on doit placer cette ligne
+%% ¡¡ À COMPLÉTER!
