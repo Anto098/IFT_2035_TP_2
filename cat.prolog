@@ -1,8 +1,5 @@
 %% -*- mode: prolog; coding: utf-8 -*-
 
-%% ANTONIN ROY 20145595
-%% CYRILLE LANCTÔT 20083807
-
 %% GNU Prolog défini `new_atom`, mais SWI Prolog l'appelle `gensym`.
 genatom(X, A) :-
     (predicate_property(new_atom/2, built_in);    % Older GNU Prolog
